@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agge"
+version = "0.3.0"
+description = "Agent Graph Engineering: a git-style CLI for orchestrating LLM agent teams to write code and books"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+agge = "agge.cli:main"
+
+[tool.setuptools]
+packages = ["agge"]

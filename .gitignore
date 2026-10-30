@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# agge local state (sessions, history, run logs)
+.agge/
+.DS_Store
