@@ -4,13 +4,15 @@
     agge <op> <args...>      執行子指令,見 agge help
 """
 import argparse
+import glob
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 from . import __version__, builtins, repl, ui
-from .graph import Executor, GraphError, describe, mermaid, validate
+from .graph import Executor, GraphError, describe, mermaid, render, validate
 from .project import Project, ProjectError
 from .providers import PROVIDERS, LLM, LLMError
 from .runtime import Runtime
@@ -99,14 +101,124 @@ def cmd_chat(args):
     repl.start(prj, rt, resume)
 
 
+def any_project():
+    """ask/map work anywhere: use the enclosing project, or built-in defaults rooted at cwd."""
+    return Project.find() or Project(os.getcwd())
+
+
+def expand_files(patterns):
+    files = []
+    for pat in patterns or []:
+        hits = sorted(glob.glob(os.path.expanduser(pat), recursive=True)) or [pat]
+        files += [h for h in hits if Path(h).is_file()] or [h for h in hits]
+    for f in files:
+        if not Path(f).is_file():
+            raise ProjectError(f"找不到檔案 {f}")
+    return files
+
+
+def attach(files):
+    return "".join(f"\n\n## File: {f}\n```\n{Path(f).read_text(encoding='utf-8', errors='replace')}\n```"
+                   for f in files)
+
+
+def brief_hint(n):
+    return f"\n\nKeep your final answer under {n} lines; no preamble." if n else ""
+
+
+def quiet_mode(args):
+    return args.quiet or args.json or bool(args.save)
+
+
+def answer_record(rt, agent, answer, t0, item=None):
+    """Emit an answer as text, JSON, or a saved file. Returns the JSON record."""
+    rec = {"answer": answer, "agent": agent.name, "model": agent.llm.label,
+           "files_changed": sorted(rt.changed), "secs": round(time.time() - t0, 1)}
+    if item is not None:
+        rec = {"item": item, **rec}
+    return rec
+
+
 def cmd_ask(args):
-    prj = need_project(args)
-    rt = make_runtime(prj, args, on_event=ui.EventPrinter(args.verbose))
-    task = read_task(args.prompt)
+    prj = any_project()
+    quiet = quiet_mode(args)
+    rt = make_runtime(prj, args, on_event=None if quiet else ui.EventPrinter(args.verbose))
+    task = read_task(args.prompt) + attach(expand_files(args.file)) + brief_hint(args.brief)
     agent = rt.agent(args.agent or ("lead" if args.team else "assistant"))
-    stream = sys.stdout.isatty() or args.stream
+    if args.no_tools:
+        agent.tools = []
+    stream = not quiet and (sys.stdout.isatty() or args.stream)
+    t0 = time.time()
     reply = agent.run([{"role": "user", "content": task}], on_token=(lambda t: ui.out(t, end="")) if stream else None)
-    ui.out("" if stream else reply)
+    rec = answer_record(rt, agent, reply, t0)
+    if args.save:
+        Path(args.save).expanduser().parent.mkdir(parents=True, exist_ok=True)
+        Path(args.save).expanduser().write_text(reply, encoding="utf-8")
+    if args.json:
+        ui.out(json.dumps({k: v for k, v in rec.items() if not (args.save and k == "answer")}, ensure_ascii=False))
+    elif args.save:
+        ui.out(f"saved {len(reply)} chars to {args.save}" + (f"; changed: {', '.join(rec['files_changed'])}"
+                                                             if rec["files_changed"] else ""))
+    else:
+        ui.out("" if stream else reply)
+
+
+def cmd_map(args):
+    """Run one prompt over many inputs in parallel (files, or stdin lines with --lines)."""
+    from concurrent.futures import ThreadPoolExecutor
+    prj = any_project()
+    rt = make_runtime(prj, args)
+    if args.lines:
+        items = [l.strip() for l in sys.stdin if l.strip()]
+    else:
+        items = expand_files(args.inputs)
+    if not items:
+        raise ProjectError("沒有輸入(給檔案或 glob,或用 --lines 從 stdin 讀每行一項)")
+    out_dir = Path(args.out_dir).expanduser() if args.out_dir else None
+    if out_dir:
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    def one(i, item):
+        is_file = not args.lines
+        content = Path(item).read_text(encoding="utf-8", errors="replace") if is_file else ""
+        v = {"item": item, "index": str(i + 1), "file": item if is_file else "",
+             "name": Path(item).stem if is_file else str(i + 1), "content": content}
+        prompt = render(args.prompt, v)
+        if is_file and "{{content}}" not in args.prompt and "{{file}}" not in args.prompt:
+            prompt += attach([item])
+        prompt += brief_hint(args.brief)
+        agent = rt.agent(args.agent, model=args.model)
+        if not args.tools:
+            agent.tools = []
+        t0 = time.time()
+        try:
+            answer, err = agent.run([{"role": "user", "content": prompt}]), None
+        except (LLMError, ToolError) as e:
+            answer, err = "", str(e)
+        rec = {"item": item, "answer": answer, "model": agent.llm.label, "secs": round(time.time() - t0, 1)}
+        if err:
+            rec["error"] = err
+        if out_dir and not err:
+            dest = out_dir / f"{v['name']}{args.ext}"
+            dest.write_text(answer, encoding="utf-8")
+            rec["saved"] = str(dest)
+            rec.pop("answer")
+        return rec
+
+    failed = 0
+    with ThreadPoolExecutor(args.jobs) as ex:
+        for rec in ex.map(lambda p: one(*p), enumerate(items)):
+            failed += "error" in rec
+            if args.json:
+                ui.out(json.dumps(rec, ensure_ascii=False))
+            elif "error" in rec:
+                ui.out(ui.red(f"✘ {rec['item']}: {rec['error']}"))
+            elif "saved" in rec:
+                ui.out(f"✔ {rec['item']} → {rec['saved']}  ({rec['secs']}s)")
+            else:
+                ui.out(ui.bold(f"### {rec['item']}") + f"\n{rec['answer']}\n")
+    if failed:
+        sys.exit(1)
 
 
 def run_graph(prj, args, graph_name, graph, task):
@@ -467,7 +579,27 @@ def build_parser():
     sp.add_argument("-a", "--agent")
     sp.add_argument("-t", "--team")
     sp.add_argument("--stream", action="store_true")
+    sp.add_argument("-f", "--file", action="append", metavar="PATH", help="附加檔案內容到提示(可重複,支援 glob)")
+    sp.add_argument("-q", "--quiet", action="store_true", help="不顯示過程,只輸出最終答案")
+    sp.add_argument("--json", action="store_true", help="輸出 JSON:answer, model, files_changed, secs")
+    sp.add_argument("--save", metavar="FILE", help="把答案寫入檔案,只印一行摘要")
+    sp.add_argument("--brief", type=int, metavar="N", help="要求最終答案不超過 N 行")
+    sp.add_argument("--no-tools", action="store_true", help="純 LLM 回答,不使用工具")
     sp.set_defaults(func=cmd_ask)
+
+    sp = sub.add_parser("map", help="同一個提示平行處理多個檔案/項目")
+    runtime_opts(sp, out=False)
+    sp.add_argument("prompt", help="提示樣板:{{file}} {{name}} {{content}} {{item}} {{index}}(未用 content 時自動附加檔案)")
+    sp.add_argument("inputs", nargs="*", help="檔案或 glob")
+    sp.add_argument("--lines", action="store_true", help="從 stdin 讀取項目,每行一項")
+    sp.add_argument("-a", "--agent", default="assistant")
+    sp.add_argument("-j", "--jobs", type=int, default=8, help="平行數")
+    sp.add_argument("-d", "--out-dir", help="每項結果寫成 <out-dir>/<name><ext>")
+    sp.add_argument("--ext", default=".md")
+    sp.add_argument("--json", action="store_true", help="每項輸出一行 JSON")
+    sp.add_argument("--brief", type=int, metavar="N")
+    sp.add_argument("--tools", action="store_true", help="允許 agent 使用工具(預設純 LLM)")
+    sp.set_defaults(func=cmd_map)
 
     sp = sub.add_parser("run", help="執行 graph 工作流程")
     sp.add_argument("graph", help="graph 名稱或 .json 檔")

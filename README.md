@@ -73,6 +73,10 @@ agge code "..." -m glm -M review=claude -M implement=ds
 
 對話中用 `/model claude` 切換目前 agent 的模型。
 
+## 分派工作給便宜模型
+
+`agge ask` 支援 `-f` 附加檔案、`-q`／`--json`／`--save` 精簡輸出、`--brief N` 限制長度；`agge map` 可以把同一個提示平行套用到多個檔案。兩者都不需要先 `agge init`。`-m minimax,glm` 會在第一個模型失敗時自動換下一個。詳見 [doc/offload.md](doc/offload.md)。
+
 ## 自訂 graph
 
 ```bash

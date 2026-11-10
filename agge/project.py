@@ -95,7 +95,7 @@ class Project:
     @property
     def config(self):
         g = _read(GLOBAL_HOME / "config.json", {})
-        p = self.raw_config
+        p = self.raw_config or (default_config() if not (self.dir / "config.json").exists() else {})
         cfg = {**g, **p}
         cfg["models"] = {**g.get("models", {}), **p.get("models", {})}
         cfg["teams"] = {**g.get("teams", {}), **p.get("teams", {})}

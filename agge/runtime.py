@@ -3,7 +3,7 @@ import threading
 import time
 
 from . import tools
-from .providers import LLM
+from .providers import LLM, FallbackLLM
 
 BASE_PROMPT = """You are "{name}", an agent in agge — a multi-agent environment for software engineering and long-form writing.
 
@@ -54,7 +54,7 @@ class Agent:
     def context(self):
         return tools.Context(
             workspace=self.rt.workspace, approver=self.rt.approver, agent=self.name,
-            allowed=set(self.tools), on_event=self.rt.event,
+            allowed=set(self.tools), on_event=self.rt.event, changed=self.rt.changed,
             delegate=lambda target, task: self.rt.delegate(self.name, target, task, self.depth))
 
     def run(self, messages, on_token=None, on_think=None):
@@ -103,6 +103,7 @@ class Runtime:
         self.language = language or cfg.get("language")
         self._llms = {}
         self._lock = threading.Lock()
+        self.changed = set()  # files written or edited by any agent in this runtime
 
     def event(self, kind, **kw):
         if self.on_event:
@@ -119,7 +120,9 @@ class Runtime:
     def llm(self, model_name):
         with self._lock:
             if model_name not in self._llms:
-                self._llms[model_name] = LLM(self.project.resolve_model(model_name))
+                names = [n.strip() for n in model_name.split(",") if n.strip()]
+                llms = [LLM(self.project.resolve_model(n)) for n in names]
+                self._llms[model_name] = llms[0] if len(llms) == 1 else FallbackLLM(llms)
             return self._llms[model_name]
 
     def agent(self, name, model=None, depth=0):

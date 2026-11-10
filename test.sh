@@ -74,6 +74,13 @@ if grep -q "never-sent" chat.txt; then bad "chat: /exit 後不應繼續"; else o
 printf '<write_file path="w.txt">hi</write_file>\n' | agge chat > tool.txt 2>&1
 check "chat: echo 回傳的工具標籤會被執行" test "$(cat w.txt 2>/dev/null)" = "hi"
 
+mkdir -p "$WORK/noproj" && cd "$WORK/noproj" && echo alpha > a.txt && echo beta > b.txt
+agge ask -m echo --json -f a.txt "sum" > ask.json 2>&1
+contains "ask --json -f (無專案)" ask.json '"answer": "\[echo\] sum.*alpha'
+agge map -m echo -d res "describe {{name}}" '*.txt' > map.txt 2>&1
+check "map -d 產生結果檔" test -s res/b.md
+check "ask/map 不建立 .agge" test ! -e .agge
+
 # ------------------------------------------------------------------ live
 if [[ "$MODE" == "live" || "$MODE" == "all" ]]; then
     section "真實模型: $MODEL"
@@ -88,6 +95,11 @@ if [[ "$MODE" == "live" || "$MODE" == "all" ]]; then
     contains "ask: 使用 write_file" ask.txt "write_file hello.py"
     contains "ask: 使用 shell" ask.txt "shell .*python3 hello.py"
     check "ask: hello.py 執行正確" bash -c 'python3 hello.py | grep -q "Hello agge"'
+
+    agge map -m "$MODEL" --brief 1 --json "用一句話說明這個檔案" "$REPO/agge/ui.py" "$REPO/agge/graph.py" > map.jsonl 2>&1
+    check "map: 2 個檔案都有答案" test "$(grep -c '"answer"' map.jsonl)" -eq 2
+    agge ask -q -m "nvidia:no-such-model,$MODEL" --no-tools "2+2=? 只回答數字" > fallback.txt 2>&1
+    contains "模型 fallback" fallback.txt "4"
 
     newproject team "$MODEL"
     agge ask -y -t code "請團隊合作:先由 architect 設計並寫 PLAN.md,再由 coder 實作 fizzbuzz.py(印出 1 到 15 的 FizzBuzz,每行一個),最後你自己讀檔確認並回報" > team.txt 2>&1

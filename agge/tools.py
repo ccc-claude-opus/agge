@@ -164,6 +164,11 @@ class Context:
     allowed: set = field(default_factory=lambda: set(TOOL_NAMES))
     on_event: callable = lambda *a, **k: None
     delegate: callable = None
+    changed: set = None
+
+    def touch(self, path):
+        if self.changed is not None:
+            self.changed.add(self.workspace.rel(path))
 
 
 def run_calls(calls, ctx):
@@ -227,6 +232,7 @@ def _write_file(call, ctx):
     append = call.attrs.get("append", "").lower() == "true"
     with open(p, "a" if append else "w", encoding="utf-8") as f:
         f.write(content)
+    ctx.touch(p)
     return f"{'appended' if append else 'wrote'} {len(content)} chars to {ctx.workspace.rel(p)}"
 
 
@@ -250,6 +256,7 @@ def _edit_file(call, ctx):
             raise ToolError(f"<old> text occurs {n} times in {call.attrs['path']}; include more context")
         text = text.replace(old, new, 1)
     p.write_text(text, encoding="utf-8")
+    ctx.touch(p)
     return f"applied {len(pairs)} edit(s) to {ctx.workspace.rel(p)}"
 
 

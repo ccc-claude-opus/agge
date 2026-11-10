@@ -165,6 +165,26 @@ class LLM:
             return "".join(parts)
 
 
+class FallbackLLM:
+    """Try each model in turn until one answers (model spec "minimax,glm")."""
+
+    def __init__(self, llms):
+        self.llms = llms
+
+    @property
+    def label(self):
+        return ",".join(l.label for l in self.llms)
+
+    def chat(self, system, messages, on_token=None, on_think=None):
+        errors = []
+        for llm in self.llms:
+            try:
+                return llm.chat(system, messages, on_token=on_token, on_think=on_think)
+            except LLMError as e:
+                errors.append(str(e))
+        raise LLMError("所有模型都失敗:\n  " + "\n  ".join(errors))
+
+
 BODY_KEYS = ("task", "content", "command", "cmd", "body", "text")
 
 

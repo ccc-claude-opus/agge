@@ -167,3 +167,37 @@ def test_empty_reply_is_retried(prj):
     replies = iter(["", "real answer"])
     llm = FakeLLM([("", lambda _: next(replies))])
     assert runtime(prj, llm).agent("writer").run([{"role": "user", "content": "x"}]) == "real answer"
+
+
+def test_fallback_llm():
+    from agge.providers import FallbackLLM, LLMError
+
+    class Broken:
+        label = "broken:x"
+
+        def chat(self, *a, **k):
+            raise LLMError("down")
+
+    ok = FakeLLM([])
+    assert FallbackLLM([Broken(), ok]).chat("", [{"role": "user", "content": "hi"}]) == "done"
+    with pytest.raises(LLMError):
+        FallbackLLM([Broken()]).chat("", [{"role": "user", "content": "hi"}])
+
+
+def test_ask_and_map_without_project(tmp_path):
+    repo = str(Path(__file__).resolve().parent.parent)
+    env = {"AGGE_HOME": str(tmp_path / "home"), "PATH": "/usr/bin:/bin", "NO_COLOR": "1", "PYTHONPATH": repo}
+    run = lambda *a, inp=None: subprocess.run([sys.executable, "-m", "agge", *a], cwd=tmp_path, env=env,
+                                              input=inp, capture_output=True, text=True)
+    (tmp_path / "a.txt").write_text("alpha")
+    (tmp_path / "b.txt").write_text("beta")
+    r = run("ask", "-m", "echo", "--json", "-f", "a.txt", "sum up")
+    rec = json.loads(r.stdout)
+    assert rec["model"] == "echo:echo" and "alpha" in rec["answer"] and rec["files_changed"] == []
+    r = run("ask", "-m", "echo", "--save", "out/ans.md", "hello")
+    assert "saved" in r.stdout and (tmp_path / "out/ans.md").read_text().startswith("[echo] hello")
+    r = run("map", "-m", "echo", "-d", "res", "describe {{name}}", "*.txt")
+    assert r.returncode == 0 and "beta" in (tmp_path / "res/b.md").read_text()
+    r = run("map", "-m", "echo", "--json", "--lines", "item {{item}}", inp="x\ny\n")
+    assert [json.loads(l)["answer"] for l in r.stdout.splitlines()] == ["[echo] item x", "[echo] item y"]
+    assert not (tmp_path / ".agge").exists()
