@@ -77,6 +77,20 @@ agge code "..." -m glm -M review=claude -M implement=ds
 
 `agge ask` 支援 `-f` 附加檔案、`-q`／`--json`／`--save` 精簡輸出、`--brief N` 限制長度；`agge map` 可以把同一個提示平行套用到多個檔案。兩者都不需要先 `agge init`。`-m minimax,glm` 會在第一個模型失敗時自動換下一個。詳見 [doc/offload.md](doc/offload.md)。
 
+## Skills 與 MCP
+
+agent 可以載入 skills（`SKILL.md`，與 Claude Code 相同格式），也可以呼叫 MCP server 的工具：
+
+```bash
+agge skill new review-style --description "依團隊風格審查程式碼時使用"
+agge config skill_dirs '["~/.claude/skills"]'      # 沿用 Claude Code 的 skills
+agge mcp add fs -- npx -y @modelcontextprotocol/server-filesystem ~/docs
+agge mcp import .mcp.json                          # 匯入 Claude 格式的 mcpServers
+agge mcp tools / agge mcp call fs list_directory '{"path": "/Users"}'
+```
+
+詳見 [doc/skills-mcp.md](doc/skills-mcp.md)。
+
 ## 自訂 graph
 
 ```bash
@@ -115,7 +129,7 @@ agge team add docs --lead lead --members outliner writer translator editor
 agge chat --team docs
 ```
 
-工具:`read_file`、`write_file`、`edit_file`、`list_files`、`search`、`shell`(需核准)、`delegate`。
+工具:`read_file`、`write_file`、`edit_file`、`list_files`、`search`、`shell`(需核准)、`delegate`、`skill`、`mcp`。
 
 ## 對話指令
 
@@ -147,6 +161,8 @@ agge/
   runtime.py    Agent 迴圈、模型選擇、delegate
   graph.py      graph 驗證/描述/mermaid 與平行執行器(map、條件迴圈)
   tools.py      文字標籤工具、工作區沙盒、shell 核准
+  skills.py     SKILL.md 搜尋與載入
+  mcp.py        MCP stdio 客戶端與伺服器管理
   providers.py  LLM provider(NVIDIA/OpenAI 相容、Anthropic、echo)
   builtins.py   內建 agents/teams/graphs
   project.py    .agge/ 狀態:config、sessions、runs

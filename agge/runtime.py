@@ -2,7 +2,8 @@
 import threading
 import time
 
-from . import tools
+from . import skills, tools
+from .mcp import MCPManager
 from .providers import LLM, FallbackLLM
 
 BASE_PROMPT = """You are "{name}", an agent in agge — a multi-agent environment for software engineering and long-form writing.
@@ -36,6 +37,10 @@ class Agent:
         self.tools = [t for t in spec.get("tools", []) if t in tools.TOOL_NAMES]
         if depth >= rt.max_depth and "delegate" in self.tools:
             self.tools.remove("delegate")
+        if "skill" in self.tools and not rt.skills:
+            self.tools.remove("skill")
+        if "mcp" in self.tools and not rt.mcp:
+            self.tools.remove("mcp")
 
     def system_prompt(self):
         ws = self.rt.workspace
@@ -49,12 +54,18 @@ class Agent:
         if "delegate" in self.tools:
             team = self.rt.delegates_for(self.name)
             text += "\n\n## Your team\n" + "\n".join(f"- {n}: {d}" for n, d in team.items())
+        if "skill" in self.tools:
+            text += "\n\n## Skills\nLoad a skill with <skill name=\"...\"/> when the task matches it:\n" \
+                    + skills.summary(self.rt.skills)
+        if "mcp" in self.tools:
+            text += "\n\n## MCP tools\n" + self.rt.mcp.summary()
         return text
 
     def context(self):
         return tools.Context(
             workspace=self.rt.workspace, approver=self.rt.approver, agent=self.name,
             allowed=set(self.tools), on_event=self.rt.event, changed=self.rt.changed,
+            skills=self.rt.skills, mcp=self.rt.mcp,
             delegate=lambda target, task: self.rt.delegate(self.name, target, task, self.depth))
 
     def run(self, messages, on_token=None, on_think=None):
@@ -104,6 +115,20 @@ class Runtime:
         self._llms = {}
         self._lock = threading.Lock()
         self.changed = set()  # files written or edited by any agent in this runtime
+        self._skills = self._mcp = None
+
+    @property
+    def skills(self):
+        if self._skills is None:
+            self._skills = skills.discover(self.project.skill_dirs())
+        return self._skills
+
+    @property
+    def mcp(self):
+        servers = self.project.config.get("mcp") or {}
+        if self._mcp is None and servers:
+            self._mcp = MCPManager(servers, cwd=str(self.workspace.root))
+        return self._mcp
 
     def event(self, kind, **kw):
         if self.on_event:

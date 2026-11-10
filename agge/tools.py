@@ -15,6 +15,7 @@ Results are returned as <tool_result name=... status="ok|error">...</tool_result
 """
 import fnmatch
 import html
+import json
 import os
 import re
 import subprocess
@@ -38,6 +39,10 @@ TOOL_DOCS = {
              '(the user may refuse)',
     "delegate": '<delegate agent="name">complete, self-contained brief</delegate> — hand a subtask to a team '
                 'member and get its final report; several delegate tags in one reply run in parallel',
+    "skill": '<skill name="skill-name"/> — load the full instructions of a skill listed under "Skills" '
+             'before doing a task it covers',
+    "mcp": '<mcp server="server" tool="tool">{"arg": "value"}</mcp> — call a tool listed under "MCP tools" '
+           'with JSON arguments',
 }
 TOOL_NAMES = tuple(TOOL_DOCS)
 SKIP_DIRS = {".git", ".agge", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache",
@@ -165,6 +170,8 @@ class Context:
     on_event: callable = lambda *a, **k: None
     delegate: callable = None
     changed: set = None
+    skills: dict = None
+    mcp: object = None
 
     def touch(self, path):
         if self.changed is not None:
@@ -324,6 +331,30 @@ def _shell(call, ctx):
     except subprocess.TimeoutExpired:
         raise ToolError("command timed out")
     return f"exit code {r.returncode}\n{r.stdout}{r.stderr}".rstrip()
+
+
+def _skill(call, ctx):
+    name = call.attrs.get("name") or (call.body or "").strip()
+    skill = (ctx.skills or {}).get(name)
+    if not skill:
+        raise ToolError(f"unknown skill '{name}'; available: {', '.join(sorted(ctx.skills or {})) or 'none'}")
+    return skill.render()
+
+
+def _mcp(call, ctx):
+    from .mcp import MCPError
+    if not ctx.mcp:
+        raise ToolError("no MCP servers are configured")
+    server, tool = call.attrs.get("server", ""), call.attrs.get("tool", "")
+    raw = (call.body or "").strip() or call.attrs.get("arguments", "") or "{}"
+    try:
+        args = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ToolError(f"arguments must be a JSON object: {e}")
+    try:
+        return ctx.mcp.call(server, tool, args)
+    except MCPError as e:
+        raise ToolError(str(e))
 
 
 def _delegate(call, ctx):

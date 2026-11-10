@@ -28,7 +28,7 @@ def default_config():
                           else "glm" if os.environ.get("NVIDIA_API_KEY") else "echo"),
         "models": {
             "echo": {"provider": "echo", "model": "echo"},
-            "minimax": {"provider": "minimax", "model": "MiniMax-M3.1-Flash", "max_tokens": 8192},
+            "minimax": {"provider": "minimax", "model": "MiniMax-M3.1-Flash", "max_tokens": 32768},
             "glm": {"provider": "nvidia", "model": "z-ai/glm-5.3-flash",
                     "temperature": 0.3, "top_p": 1.0, "max_tokens": 8192},
         },
@@ -150,6 +150,10 @@ class Project:
         if not f.exists():
             raise ProjectError(f"'{name}' 不是專案 graph(內建 graph 不能刪)")
         f.unlink()
+
+    def skill_dirs(self):
+        """Skill search path, lowest priority first: ~/.agge/skills, config skill_dirs, .agge/skills."""
+        return [GLOBAL_HOME / "skills", *self.config.get("skill_dirs", []), self.dir / "skills"]
 
     def teams(self):
         return {**builtins.TEAMS, **self.config.get("teams", {})}

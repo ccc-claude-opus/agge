@@ -1,7 +1,7 @@
 """Built-in agents, teams and graphs. Projects can override any of them by name."""
 
-ALL_TOOLS = ["read_file", "write_file", "edit_file", "list_files", "search", "shell"]
-FILE_TOOLS = ["read_file", "write_file", "edit_file", "list_files", "search"]
+ALL_TOOLS = ["read_file", "write_file", "edit_file", "list_files", "search", "shell", "skill", "mcp"]
+FILE_TOOLS = ["read_file", "write_file", "edit_file", "list_files", "search", "skill", "mcp"]
 
 AGENTS = {
     "assistant": {
@@ -18,7 +18,7 @@ AGENTS = {
                   "(members do not see this conversation), run independent subtasks in parallel, "
                   "check their results in the workspace, iterate when quality is lacking, "
                   "then report the outcome to the user.",
-        "tools": ["read_file", "list_files", "search", "delegate"],
+        "tools": ["read_file", "list_files", "search", "delegate", "skill", "mcp"],
     },
     "architect": {
         "description": "架構師:分析需求、設計模組與介面、撰寫 PLAN.md",
@@ -42,7 +42,7 @@ AGENTS = {
         "description": "審查者:檢查正確性與品質,決定 APPROVED / REVISE",
         "system": "You are a strict but fair code reviewer. Read the actual files. Focus on correctness, "
                   "missing requirements, bugs, and maintainability. Give concrete, actionable feedback.",
-        "tools": ["read_file", "list_files", "search"],
+        "tools": ["read_file", "list_files", "search", "skill", "mcp"],
     },
     "outliner": {
         "description": "大綱規劃:為書籍或長文設計章節結構",

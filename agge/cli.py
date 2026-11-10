@@ -475,6 +475,80 @@ def cmd_config(args):
         ui.out(f"{args.key} = {cfg[args.key]!r}")
 
 
+def cmd_skill(args):
+    from . import skills
+    prj = any_project()
+    found = skills.discover(prj.skill_dirs())
+    if args.op == "list":
+        if not found:
+            ui.out("沒有 skill。搜尋路徑:\n" + "\n".join(f"  {d}" for d in prj.skill_dirs()))
+        for name, sk in sorted(found.items()):
+            ui.out(f"  {ui.cyan(name):<28} {ui.short(sk.description, 70)}  {ui.dim(str(sk.path))}")
+    elif args.op == "dirs":
+        ui.out("\n".join(f"  {d}" for d in prj.skill_dirs()))
+    elif args.op == "show":
+        if args.name not in found:
+            raise ProjectError(f"找不到 skill '{args.name}'")
+        ui.out(found[args.name].render())
+    elif args.op == "new":
+        if not args.name:
+            raise ProjectError("用法: agge skill new <name> --description '...' [--global]")
+        root = (Path(os.environ.get("AGGE_HOME", Path.home() / ".agge")) if args.global_ else need_project(args).dir) / "skills"
+        d = skills.create(root, args.name, args.description or "TODO: what this skill does and when to use it")
+        ui.out(f"已建立 {d / 'SKILL.md'}")
+
+
+def cmd_mcp(args):
+    from .mcp import MCPError, MCPManager, load_mcp_json
+    prj = any_project()
+    servers = prj.config.get("mcp") or {}
+    if args.op in ("add", "rm", "import"):
+        prj = need_project(args)
+        cfg = prj.raw_config
+        table = cfg.setdefault("mcp", {})
+        if args.op == "add":
+            if not args.name or not args.rest:
+                raise ProjectError("用法: agge mcp add <name> [--env K=V] -- <command> [args...]")
+            rest = args.rest
+            opts, cmd = (rest[:rest.index("--")], rest[rest.index("--") + 1:]) if "--" in rest else ([], rest)
+            env = list(args.env or []) + [opts[i + 1] for i, o in enumerate(opts[:-1]) if o == "--env"]
+            if not cmd:
+                raise ProjectError("缺少 server 指令(放在 -- 之後)")
+            table[args.name] = {"command": cmd[0], "args": cmd[1:], "env": parse_kv(env)}
+            ui.out(f"已新增 MCP server {args.name}: {' '.join(cmd)}")
+        elif args.op == "rm":
+            table.pop(args.name, None)
+            ui.out(f"已移除 {args.name}")
+        else:
+            imported = load_mcp_json(os.path.expanduser(args.name))
+            table.update(imported)
+            ui.out(f"已匯入 {len(imported)} 個 server: {', '.join(imported) or '(無)'}")
+        prj.save_config(cfg)
+        return
+    if not servers:
+        ui.out("沒有設定 MCP server(agge mcp add <name> -- <command> ...)")
+        return
+    mgr = MCPManager(servers, cwd=str(prj.root))
+    try:
+        if args.op == "list":
+            for n, c in servers.items():
+                off = ui.dim(" (disabled)") if c.get("disabled") else ""
+                ui.out(f"  {ui.cyan(n):<20} {c.get('command')} {' '.join(c.get('args', []))}{off}")
+        elif args.op == "tools":
+            if args.name:
+                mgr = MCPManager({args.name: servers[args.name]}, cwd=str(prj.root))
+            ui.out(mgr.summary())
+        elif args.op == "call":
+            if not args.name or len(args.rest) < 1:
+                raise ProjectError("用法: agge mcp call <server> <tool> ['{\"arg\": 1}']")
+            arguments = json.loads(args.rest[1]) if len(args.rest) > 1 else {}
+            ui.out(mgr.call(args.name, args.rest[0], arguments))
+    except MCPError as e:
+        raise ProjectError(str(e))
+    finally:
+        mgr.close_all()
+
+
 def cmd_log(args):
     prj = need_project(args)
     runs = prj.runs()
@@ -681,6 +755,20 @@ def build_parser():
     sp.add_argument("key", nargs="?")
     sp.add_argument("value", nargs="?")
     sp.set_defaults(func=cmd_config)
+
+    sp = sub.add_parser("skill", help="Skills: list|show|new|dirs")
+    sp.add_argument("op", choices=["list", "show", "new", "dirs"])
+    sp.add_argument("name", nargs="?")
+    sp.add_argument("--description")
+    sp.add_argument("--global", dest="global_", action="store_true", help="new: 建在 ~/.agge/skills")
+    sp.set_defaults(func=cmd_skill)
+
+    sp = sub.add_parser("mcp", help="MCP servers: list|add|rm|import|tools|call")
+    sp.add_argument("op", choices=["list", "add", "rm", "import", "tools", "call"])
+    sp.add_argument("name", nargs="?", help="server 名稱(import: .mcp.json 路徑)")
+    sp.add_argument("rest", nargs=argparse.REMAINDER, help="add: -- command args... / call: tool [json]")
+    sp.add_argument("--env", action="append", metavar="K=V")
+    sp.set_defaults(func=cmd_mcp)
 
     sp = sub.add_parser("log", help="執行紀錄: agge log [run|last] [node]")
     sp.add_argument("run", nargs="?")

@@ -74,6 +74,16 @@ if grep -q "never-sent" chat.txt; then bad "chat: /exit 後不應繼續"; else o
 printf '<write_file path="w.txt">hi</write_file>\n' | agge chat > tool.txt 2>&1
 check "chat: echo 回傳的工具標籤會被執行" test "$(cat w.txt 2>/dev/null)" = "hi"
 
+cd "$WORK/offline"
+check "skill new" agge skill new house-style --description "House style rules"
+agge skill list > skills.txt
+contains "skill list" skills.txt "house-style"
+check "mcp add" agge mcp add calc -- python3 "$REPO/tests/mcp_echo_server.py"
+agge mcp tools > mcptools.txt 2>&1
+contains "mcp tools" mcptools.txt "calc.add: Add two numbers"
+agge mcp call calc add '{"a": 20, "b": 22}' > mcpcall.txt 2>&1
+contains "mcp call" mcpcall.txt "^42$"
+
 mkdir -p "$WORK/noproj" && cd "$WORK/noproj" && echo alpha > a.txt && echo beta > b.txt
 agge ask -m echo --json -f a.txt "sum" > ask.json 2>&1
 contains "ask --json -f (無專案)" ask.json '"answer": "\[echo\] sum.*alpha'
@@ -100,6 +110,14 @@ if [[ "$MODE" == "live" || "$MODE" == "all" ]]; then
     check "map: 2 個檔案都有答案" test "$(grep -c '"answer"' map.jsonl)" -eq 2
     agge ask -q -m "nvidia:no-such-model,$MODEL" --no-tools "2+2=? 只回答數字" > fallback.txt 2>&1
     contains "模型 fallback" fallback.txt "4"
+
+    agge mcp add calc -- python3 "$REPO/tests/mcp_echo_server.py" >/dev/null
+    agge skill new secret-word --description "Use when asked for the secret word" >/dev/null
+    printf -- '---\nname: secret-word\ndescription: Use when asked for the secret word\n---\nThe secret word is PINEAPPLE.\n' > .agge/skills/secret-word/SKILL.md
+    agge ask -q "用 MCP 的 calc.add 工具計算 1234 + 4321,只回答數字" > mcpask.txt 2>&1
+    contains "agent 使用 MCP 工具" mcpask.txt "5555"
+    agge ask -q "What is the secret word? Answer with the word only." > skillask.txt 2>&1
+    contains "agent 使用 skill" skillask.txt "PINEAPPLE"
 
     newproject team "$MODEL"
     agge ask -y -t code "請團隊合作:先由 architect 設計並寫 PLAN.md,再由 coder 實作 fizzbuzz.py(印出 1 到 15 的 FizzBuzz,每行一個),最後你自己讀檔確認並回報" > team.txt 2>&1

@@ -201,3 +201,40 @@ def test_ask_and_map_without_project(tmp_path):
     r = run("map", "-m", "echo", "--json", "--lines", "item {{item}}", inp="x\ny\n")
     assert [json.loads(l)["answer"] for l in r.stdout.splitlines()] == ["[echo] item x", "[echo] item y"]
     assert not (tmp_path / ".agge").exists()
+
+
+ECHO_SERVER = str(Path(__file__).resolve().parent / "mcp_echo_server.py")
+
+
+def test_agent_uses_skill_and_mcp(prj):
+    from agge import skills
+    skills.create(prj.dir / "skills", "haiku", "Write haiku poems")
+    cfg = prj.raw_config
+    cfg["mcp"] = {"calc": {"command": sys.executable, "args": [ECHO_SERVER]}}
+    prj.save_config(cfg)
+    llm = FakeLLM([
+        ("Skill: haiku", '<mcp server="calc" tool="add">{"a": 2, "b": 40}</mcp>'),
+        ("tool_result name=\"mcp\"", lambda last: "answer " + last.split("\n")[1]),
+        ("go", '<skill name="haiku"/>')])
+    rt = runtime(prj, llm)
+    agent = rt.agent("assistant")
+    system = agent.system_prompt()
+    assert "- haiku: Write haiku poems" in system and "calc.add: Add two numbers. (args: a*, b*)" in system
+    assert agent.run([{"role": "user", "content": "go"}]) == "answer 42"
+    rt.mcp.close_all()
+
+
+def test_cli_skill_and_mcp(tmp_path):
+    repo = str(Path(__file__).resolve().parent.parent)
+    env = {"AGGE_HOME": str(tmp_path / "home"), "PATH": "/usr/bin:/bin", "NO_COLOR": "1", "PYTHONPATH": repo}
+    run = lambda *a: subprocess.run([sys.executable, "-m", "agge", *a], cwd=tmp_path, env=env,
+                                    capture_output=True, text=True)
+    run("init", "-m", "echo")
+    assert run("skill", "new", "review-style", "--description", "House review style").returncode == 0
+    assert "review-style" in run("skill", "list").stdout
+    assert run("mcp", "add", "calc", "--", sys.executable, ECHO_SERVER).returncode == 0
+    assert "calc.echo" in run("mcp", "tools").stdout
+    assert run("mcp", "call", "calc", "add", '{"a": 1, "b": 2}').stdout.strip() == "3"
+    (tmp_path / "claude.json").write_text(json.dumps({"mcpServers": {"x": {"command": "x-server"}}}))
+    assert "x" in run("mcp", "import", "claude.json").stdout
+    assert set(json.loads((tmp_path / ".agge/config.json").read_text())["mcp"]) == {"calc", "x"}
