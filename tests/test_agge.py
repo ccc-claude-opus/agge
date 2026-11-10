@@ -59,6 +59,8 @@ def test_tools_and_workspace(tmp_path):
     denied = tools.run_calls(tools.parse_calls("<shell>echo x</shell>"),
                              tools.Context(ws, tools.Approver("deny")))
     assert "denied" in denied
+    attr_form = tools.run_calls(tools.parse_calls('<shell command="echo attr"/>'), ctx)
+    assert "exit code 0\nattr" in attr_form
 
 
 def test_agent_tool_loop(prj):

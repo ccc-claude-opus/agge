@@ -21,6 +21,7 @@ PROVIDERS = {
     "openai":     {"kind": "openai", "base_url": "https://api.openai.com/v1", "env": "OPENAI_API_KEY"},
     "nvidia":     {"kind": "openai", "base_url": "https://integrate.api.nvidia.com/v1", "env": "NVIDIA_API_KEY"},
     "openrouter": {"kind": "openai", "base_url": "https://openrouter.ai/api/v1", "env": "OPENROUTER_API_KEY"},
+    "minimax":    {"kind": "openai", "base_url": "https://api.minimaxi.com/v1", "env": "MINIMAX_API_KEY"},
     "deepseek":   {"kind": "openai", "base_url": "https://api.deepseek.com/v1", "env": "DEEPSEEK_API_KEY"},
     "groq":       {"kind": "openai", "base_url": "https://api.groq.com/openai/v1", "env": "GROQ_API_KEY"},
     "gemini":     {"kind": "openai", "base_url": "https://generativelanguage.googleapis.com/v1beta/openai", "env": "GEMINI_API_KEY"},

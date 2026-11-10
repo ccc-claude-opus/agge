@@ -24,9 +24,11 @@ GLOBAL_HOME = Path(os.environ.get("AGGE_HOME", Path.home() / ".agge"))
 
 def default_config():
     cfg = {
-        "default_model": "glm" if os.environ.get("NVIDIA_API_KEY") else "echo",
+        "default_model": ("minimax" if os.environ.get("MINIMAX_API_KEY")
+                          else "glm" if os.environ.get("NVIDIA_API_KEY") else "echo"),
         "models": {
             "echo": {"provider": "echo", "model": "echo"},
+            "minimax": {"provider": "minimax", "model": "MiniMax-M3.1-Flash", "max_tokens": 8192},
             "glm": {"provider": "nvidia", "model": "z-ai/glm-5.3-flash",
                     "temperature": 0.3, "top_p": 1.0, "max_tokens": 8192},
         },

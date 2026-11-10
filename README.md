@@ -5,7 +5,7 @@
 
 - 純 Python 標準函式庫,無相依套件(Python ≥ 3.10)
 - 多模型:每個 agent、每個 graph 節點都可以指定不同模型
-- Provider:`nvidia`、`openai`、`anthropic`、`openrouter`、`deepseek`、`groq`、`gemini`、`ollama`、`lmstudio`、任意 OpenAI 相容端點、`echo`(離線測試)
+- Provider:`nvidia`、`minimax`、`openai`、`anthropic`、`openrouter`、`deepseek`、`groq`、`gemini`、`ollama`、`lmstudio`、任意 OpenAI 相容端點、`echo`(離線測試)
 - 工具採文字標籤協定(`<write_file>`、`<shell>`…),任何模型都能用,不需要 function calling
 
 ## 安裝
@@ -17,8 +17,9 @@ pip install -e .
 ## 快速開始
 
 ```bash
-export NVIDIA_API_KEY=nvapi-...
-agge init                 # 建立 .agge/,有 NVIDIA key 時預設模型為 glm (z-ai/glm-5.3-flash)
+export NVIDIA_API_KEY=nvapi-...      # glm     = nvidia:z-ai/glm-5.3-flash
+export MINIMAX_API_KEY=sk-...        # minimax = minimax:MiniMax-M3.1-Flash (api.minimaxi.com)
+agge init                 # 建立 .agge/;預設模型:有 MINIMAX key 用 minimax,否則有 NVIDIA key 用 glm
 agge                      # 進入互動對話(= agge chat)
 ```
 

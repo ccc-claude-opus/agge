@@ -6,15 +6,15 @@
 #   ./test.sh all        再加上完整工作流程:agge code(寫程式並跑測試)、agge book(寫 3 章小書)
 #
 # 環境變數:
-#   AGGE_TEST_MODEL   使用的模型(預設 glm = nvidia:z-ai/glm-5.3-flash)
+#   AGGE_TEST_MODEL   使用的模型(預設 minimax = MiniMax-M3.1-Flash;也可用 glm = nvidia:z-ai/glm-5.3-flash)
 #   AGGE_TEST_DIR     測試工作目錄(預設在暫存目錄建立,結束後保留以便檢查)
 #
-# 注意:NVIDIA 免費端點每次呼叫可能排隊 1 分鐘以上,live 約 10 分鐘,all 可能 30 分鐘以上。
+# 注意:glm 走 NVIDIA 免費端點,每次呼叫可能排隊 1 分鐘以上,all 模式可能 30 分鐘以上。
 
 set -u
 MODE="${1:-offline}"
 REPO="$(cd "$(dirname "$0")" && pwd)"
-MODEL="${AGGE_TEST_MODEL:-glm}"
+MODEL="${AGGE_TEST_MODEL:-minimax}"
 WORK="${AGGE_TEST_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/agge-test.XXXXXX")}"
 export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
 export NO_COLOR=1
@@ -86,7 +86,7 @@ if [[ "$MODE" == "live" || "$MODE" == "all" ]]; then
 
     agge ask -y "建立 hello.py,內容為印出 Hello agge 的程式,然後用 shell 執行 python3 hello.py 確認輸出" > ask.txt 2>&1
     contains "ask: 使用 write_file" ask.txt "write_file hello.py"
-    contains "ask: 使用 shell" ask.txt "shell python3 hello.py"
+    contains "ask: 使用 shell" ask.txt "shell .*python3 hello.py"
     check "ask: hello.py 執行正確" bash -c 'python3 hello.py | grep -q "Hello agge"'
 
     newproject team "$MODEL"

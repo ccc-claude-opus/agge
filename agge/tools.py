@@ -88,6 +88,13 @@ def strip_tool_tags(text):
     return re.sub(r"<(%s)\b[^>]*>.*?</\1>" % "|".join(TOOL_NAMES), "", text, flags=re.S).strip()
 
 
+def _body(call, *keys):
+    """Tag body, or a fallback attribute (some models write <shell command="ls"/>)."""
+    if call.body is not None:
+        return call.body
+    return next((call.attrs[k] for k in keys if k in call.attrs), "")
+
+
 def _trim_nl(s):
     if s.startswith("\r\n"):
         s = s[2:]
@@ -213,7 +220,7 @@ def _read_file(call, ctx):
 
 def _write_file(call, ctx):
     p = ctx.workspace.resolve(call.attrs.get("path"))
-    content = _trim_nl(call.body or "")
+    content = _trim_nl(_body(call, "content"))
     if content and not content.endswith("\n"):
         content += "\n"
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -299,7 +306,7 @@ def _search(call, ctx):
 
 
 def _shell(call, ctx):
-    cmd = (call.body or "").strip()
+    cmd = _body(call, "command", "cmd").strip()
     if not cmd:
         raise ToolError("empty command")
     if not ctx.approver.confirm(f"{ctx.agent} 要執行 shell(在 {ctx.workspace.root}):\n  {cmd}"):
@@ -315,7 +322,7 @@ def _shell(call, ctx):
 def _delegate(call, ctx):
     if not ctx.delegate:
         raise ToolError("delegation is not available here")
-    task = (call.body or "").strip()
+    task = _body(call, "task", "content").strip()
     if not task:
         raise ToolError("empty delegate task")
     return ctx.delegate(call.attrs.get("agent", ""), task)
