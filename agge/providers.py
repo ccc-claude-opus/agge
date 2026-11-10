@@ -9,6 +9,7 @@ All providers expose the same interface:  LLM(cfg).chat(system, messages, on_tok
 
 Only the standard library is used (urllib), so agge has no hard dependencies.
 """
+import html
 import json
 import os
 import time
@@ -107,14 +108,19 @@ class LLM:
             headers["Authorization"] = f"Bearer {self.api_key}"
         with self._post(f"{self.base_url}/chat/completions", headers, body) as resp:
             if not body["stream"]:
-                data = json.load(resp)
-                return (data["choices"][0]["message"].get("content") or "")
-            parts = []
+                msg = json.load(resp)["choices"][0]["message"]
+                return (msg.get("content") or "") + tool_calls_to_tags(msg.get("tool_calls"))
+            parts, calls = [], {}
             for ev in self._sse(resp):
                 choices = ev.get("choices") or []
                 if not choices:
                     continue
                 delta = choices[0].get("delta") or {}
+                for tc in delta.get("tool_calls") or []:
+                    acc = calls.setdefault(tc.get("index", len(calls)), {"function": {"name": "", "arguments": ""}})
+                    fn = tc.get("function") or {}
+                    acc["function"]["name"] += fn.get("name") or ""
+                    acc["function"]["arguments"] += fn.get("arguments") or ""
                 think = delta.get("reasoning_content") or delta.get("reasoning")
                 if think and on_think:
                     on_think(think)
@@ -123,7 +129,10 @@ class LLM:
                     parts.append(text)
                     if on_token:
                         on_token(text)
-            return "".join(parts)
+            tags = tool_calls_to_tags([calls[i] for i in sorted(calls)])
+            if tags and on_token:
+                on_token(tags)
+            return "".join(parts) + tags
 
     def _anthropic(self, system, messages, on_token, on_think):
         body = {"model": self.model, "messages": messages,
@@ -153,6 +162,29 @@ class LLM:
                 elif delta.get("type") == "thinking_delta" and on_think:
                     on_think(delta.get("thinking", ""))
             return "".join(parts)
+
+
+BODY_KEYS = ("task", "content", "command", "cmd", "body", "text")
+
+
+def tool_calls_to_tags(tool_calls):
+    """Some servers turn tool-like output into native tool_calls; map them back to agge tags."""
+    out = []
+    for tc in tool_calls or []:
+        fn = tc.get("function") or {}
+        name = fn.get("name") or ""
+        if not name:
+            continue
+        try:
+            args = json.loads(fn.get("arguments") or "{}")
+        except json.JSONDecodeError:
+            args = {"body": fn.get("arguments")}
+        if not isinstance(args, dict):
+            args = {"body": args}
+        body = next((str(args.pop(k)) for k in BODY_KEYS if k in args), None)
+        attrs = "".join(f' {k}="{html.escape(str(v))}"' for k, v in args.items())
+        out.append(f"<{name}{attrs}>{body}</{name}>" if body is not None else f"<{name}{attrs}/>")
+    return ("\n" + "\n".join(out)) if out else ""
 
 
 def parse_spec(spec):

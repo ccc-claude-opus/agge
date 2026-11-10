@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -122,7 +123,8 @@ def test_model_resolution(prj):
 
 
 def test_cli_end_to_end(tmp_path):
-    env = {"AGGE_HOME": str(tmp_path / "home"), "PATH": "/usr/bin:/bin", "NO_COLOR": "1"}
+    repo = str(Path(__file__).resolve().parent.parent)
+    env = {"AGGE_HOME": str(tmp_path / "home"), "PATH": "/usr/bin:/bin", "NO_COLOR": "1", "PYTHONPATH": repo}
     run = lambda *a: subprocess.run([sys.executable, "-m", "agge", *a], cwd=tmp_path, env=env,
                                     capture_output=True, text=True)
     assert run("init", "-m", "echo").returncode == 0
@@ -140,3 +142,26 @@ def test_cli_end_to_end(tmp_path):
                        capture_output=True, text=True)
     assert "[echo] ping" in r.stdout
     assert json.loads((tmp_path / ".agge/config.json").read_text())["default_model"] == "echo"
+
+
+def test_tool_calls_to_tags():
+    from agge.providers import tool_calls_to_tags
+    tags = tool_calls_to_tags([
+        {"function": {"name": "delegate", "arguments": '{"agent": "coder", "task": "build it"}'}},
+        {"function": {"name": "read_file", "arguments": '{"path": "a.py"}'}}])
+    calls = tools.parse_calls(tags)
+    assert [(c.name, c.attrs, c.body) for c in calls] == [
+        ("delegate", {"agent": "coder"}, "build it"), ("read_file", {"path": "a.py"}, None)]
+
+
+def test_nudge_when_action_announced_without_tag(prj):
+    llm = FakeLLM([("tool_result", "done!"), ("Write the tool tag", '<list_files path="."/>'),
+                   ("go", "Step 1: list the files:")])
+    out = runtime(prj, llm).agent("coder").run([{"role": "user", "content": "go"}])
+    assert out == "done!" and any("Write the tool tag" in c for c in llm.calls)
+
+
+def test_empty_reply_is_retried(prj):
+    replies = iter(["", "real answer"])
+    llm = FakeLLM([("", lambda _: next(replies))])
+    assert runtime(prj, llm).agent("writer").run([{"role": "user", "content": "x"}]) == "real answer"

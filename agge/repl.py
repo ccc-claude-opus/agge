@@ -105,20 +105,8 @@ class Chat:
                 except EOFError:
                     ui.out()
                     break
-                if not text:
-                    continue
-                if text.startswith("/"):
-                    if self.command(text) == "exit":
-                        break
-                    continue
-                target = self.speaker
-                if text.startswith("@"):
-                    name, _, rest = text[1:].partition(" ")
-                    if name not in self.rt.agents():
-                        ui.err(f"沒有 agent '{name}'")
-                        continue
-                    target, text = name, rest.strip()
-                self.send(target, text)
+                if self.handle(text) == "exit":
+                    break
         finally:
             self.save()
             if readline:
@@ -126,6 +114,22 @@ class Chat:
                     readline.write_history_file(self.history_file)
                 except OSError:
                     pass
+
+    def handle(self, text):
+        """Process one input: a /command, an @agent message, or a message to the current speaker."""
+        text = text.strip()
+        if not text:
+            return None
+        if text.startswith("/"):
+            return self.command(text)
+        target = self.speaker
+        if text.startswith("@"):
+            name, _, rest = text[1:].partition(" ")
+            if name not in self.rt.agents():
+                ui.err(f"沒有 agent '{name}'")
+                return None
+            target, text = name, rest.strip()
+        self.send(target, text)
 
     def send(self, target, text):
         hist = self.s["histories"].setdefault(target, [])
@@ -305,8 +309,11 @@ def start(project, rt, resume=None):
     if not sys.stdin.isatty():
         # piped input: run each line as a message, no prompt decoration
         chat = Chat(project, rt, session)
-        for line in sys.stdin:
-            if line.strip():
-                chat.send(chat.speaker, line.strip())
+        try:
+            for line in sys.stdin:
+                if chat.handle(line) == "exit":
+                    break
+        finally:
+            chat.save()
         return
     Chat(project, rt, session).loop()

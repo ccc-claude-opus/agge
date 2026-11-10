@@ -23,6 +23,11 @@ Continue (inspect → change → verify) until the task is done, then give a fin
 Paths are relative to the workspace root. Always write complete file contents."""
 
 
+NUDGE = ("Your reply ended right before the action you announced, without any tool tag. "
+         "Write the tool tag(s) now, or give your final answer if the task is complete.")
+EMPTY_NUDGE = "Your previous reply was empty. Please continue with the task."
+
+
 class Agent:
     def __init__(self, name, spec, rt, model=None, depth=0):
         self.name, self.spec, self.rt, self.depth = name, spec, rt, depth
@@ -54,13 +59,24 @@ class Agent:
 
     def run(self, messages, on_token=None, on_think=None):
         """Agent loop: call the model, execute tool tags, feed results back. Mutates `messages`."""
-        system, reply = self.system_prompt(), ""
+        system, reply, nudges = self.system_prompt(), "", 0
         for step in range(self.rt.max_steps):
             self.rt.event("llm", agent=self.name, model=self.llm.label, step=step)
-            reply = self.llm.chat(system, messages, on_token=on_token, on_think=on_think) or "(empty reply)"
+            reply = (self.llm.chat(system, messages, on_token=on_token, on_think=on_think) or "").strip()
+            empty = not reply
+            reply = reply or "(empty reply)"
             messages.append({"role": "assistant", "content": reply})
             calls = tools.parse_calls(reply) if self.tools else []
             if not calls:
+                # Models sometimes return nothing, or announce an action ("Step 1: ask architect:")
+                # and stop before writing the tag; nudge them to continue instead of finishing.
+                stalled = self.tools and reply.rstrip("*").endswith((":", "："))
+                if (empty or stalled) and nudges < 2:
+                    nudges += 1
+                    why = "回覆是空的" if empty else "宣告了動作但沒有寫出工具標籤"
+                    self.rt.event("warn", agent=self.name, msg=f"{self.name} {why},提醒它繼續")
+                    messages.append({"role": "user", "content": EMPTY_NUDGE if empty else NUDGE})
+                    continue
                 return reply
             if on_token:
                 on_token("\n")
