@@ -64,3 +64,13 @@ agge log last review                                     # 只看某個節點的
 1. 讀大量檔案、寫初稿、翻譯、摘要 → 交給 `ask`／`map`，結果存檔或用 `--brief` 限制長度。
 2. 主控者只檢查 `files_changed` 與測試結果，而不是重讀全部內容。
 3. 品質要求高的步驟（例如審查）可用 `-M review=另一個模型` 讓不同模型交叉檢查。
+
+## 給 Claude Code 用的 skill
+
+`skills/cheap-llm/SKILL.md` 是一個 Claude Code skill，教 Claude 何時、如何用 agge 把工作交給便宜模型。安裝方式：
+
+```bash
+ln -sfn "$PWD/skills/cheap-llm" ~/.claude/skills/cheap-llm
+```
+
+再在 `~/.claude/CLAUDE.md` 加一段規定，要求每個任務都先考慮分派給便宜模型，並指向這個 skill。
