@@ -56,11 +56,12 @@ ATTR_NAMES = ("path", "pattern", "glob", "timeout", "depth", "start", "end", "ap
 #   ]<]minimax[>[  (or only ]<]minimax[)    a leaked marker of the model's native tool-call format
 #   <shell timeout>120">ls</shell>          `="` written as `>`
 #   <search pattern>a|b</pattern> path="."/>  an attribute written as a child element
-#   shell timeout="120">ls</shell>          the opening `<` missing
+#   shell timeout="120">ls</shell>          the opening `<` missing (also list_files path="."/>)
 _GARBAGE = re.compile(r"\]<\][\w-]*\[(?:>\[)?")
 _BROKEN_EQ = re.compile(r'(<(?:%s)(?:\s+[\w-]+\s*=\s*"[^"]*")*\s+[\w-]+)>([^"<>\n]*)"' % _NAMES)
 _CHILD_ATTR = re.compile(r'(<(?:%s)(?:\s+[\w-]+\s*=\s*"[^"]*")*)\s+(%s)>(.*?)</\2>' % (_NAMES, "|".join(ATTR_NAMES)), re.S)
 _MISSING_LT = re.compile(r'(?<![<\w/])(%s)((?:\s+[\w-]+\s*=\s*"[^"]*")*\s*>.*?</\1>)' % _NAMES, re.S)
+_MISSING_LT_SELF = re.compile(r'(?<![<\w/])(%s)((?:\s+[\w-]+\s*=\s*"[^"]*")+\s*/>)' % _NAMES)
 _OPEN = re.compile(r"<(%s)\b" % _NAMES)
 _FENCE = re.compile(r"```.*?(```|\Z)", re.S)
 _ATTR = re.compile(r'([\w-]+)\s*=\s*"([^"]*)"')
@@ -83,6 +84,7 @@ def repair(text):
     """Undo the known kinds of tag damage (see _GARBAGE, _BROKEN_EQ, _CHILD_ATTR)."""
     text = _GARBAGE.sub("", text)
     text = _MISSING_LT.sub(r"<\1\2", text)
+    text = _MISSING_LT_SELF.sub(r"<\1\2", text)
     for _ in range(16):
         new = _CHILD_ATTR.sub(lambda m: f'{m.group(1)} {m.group(2)}="{html.escape(m.group(3), quote=True)}"', text)
         new = _BROKEN_EQ.sub(r'\1="\2"', new)

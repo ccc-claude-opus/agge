@@ -56,6 +56,9 @@ def test_repair_damaged_tags():
     assert c[0].body == "reda --version || true"
     c = tools.parse_calls('shell timeout="120">reda sim crc32.veryl</shell>')
     assert [(x.name, x.body) for x in c] == [("shell", "reda sim crc32.veryl")]
+    c = tools.parse_calls('list_files path="." depth="3"/>')
+    assert [(x.name, x.attrs) for x in c] == [("list_files", {"path": ".", "depth": "3"})]
+    assert tools.parse_calls("the list_files tool lists files") == []
     # well-formed tags and file contents are left alone
     c = tools.parse_calls('<write_file path="a.html"><p class="x">say "hi"</p></write_file><shell timeout="60" >echo "a>b"</shell>')
     assert [x.body for x in c] == ['<p class="x">say "hi"</p>', 'echo "a>b"']
