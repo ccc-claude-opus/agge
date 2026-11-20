@@ -54,6 +54,8 @@ def test_repair_damaged_tags():
     assert [(x.name, x.attrs) for x in c] == [("search", {"pattern": "x_close|y_close|chan<|stream", "path": "..", "glob": "*.veryl"})]
     c = tools.parse_calls('<shell timeout="120">reda --version || true]<]minimax[</shell>')
     assert c[0].body == "reda --version || true"
+    c = tools.parse_calls('shell timeout="120">reda sim crc32.veryl</shell>')
+    assert [(x.name, x.body) for x in c] == [("shell", "reda sim crc32.veryl")]
     # well-formed tags and file contents are left alone
     c = tools.parse_calls('<write_file path="a.html"><p class="x">say "hi"</p></write_file><shell timeout="60" >echo "a>b"</shell>')
     assert [x.body for x in c] == ['<p class="x">say "hi"</p>', 'echo "a>b"']
@@ -190,6 +192,13 @@ def test_empty_reply_is_retried(prj):
     replies = iter(["", "real answer"])
     llm = FakeLLM([("", lambda _: next(replies))])
     assert runtime(prj, llm).agent("writer").run([{"role": "user", "content": "x"}]) == "real answer"
+
+
+def test_retry_waits():
+    from agge.providers import retry_wait
+    assert [retry_wait(429, i) for i in range(7)] == [10, 20, 40, 60, 60, 60, None]
+    assert retry_wait(429, 0, "3") == 3.0 and retry_wait(429, 0, "soon") == 10
+    assert [retry_wait(503, i) for i in range(4)] == [2, 4, 8, None]
 
 
 def test_fallback_llm():

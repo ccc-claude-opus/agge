@@ -31,6 +31,21 @@ PROVIDERS = {
 }
 
 RETRY_CODES = (408, 429, 500, 502, 503, 504)
+RETRIES = 3
+# a rate limit (429) needs a longer wait than a passing server error: plans count tokens per minute
+RATE_WAITS = (10, 20, 40, 60, 60, 60)
+
+
+def retry_wait(code, attempt, retry_after=None):
+    """Seconds to wait before attempt+1, or None to give up."""
+    if code == 429:
+        if attempt >= len(RATE_WAITS):
+            return None
+        try:
+            return max(float(retry_after), 1.0) if retry_after else RATE_WAITS[attempt]
+        except ValueError:
+            return RATE_WAITS[attempt]
+    return 2 ** attempt * 2 if attempt < RETRIES else None
 
 
 class LLMError(RuntimeError):
@@ -64,17 +79,22 @@ class LLM:
         if self.env and not self.api_key:
             raise LLMError(f"{self.label}: 缺少 API key,請設定環境變數 {self.env}")
         fn = self._openai if self.kind == "openai" else self._anthropic
-        for attempt in range(4):
+        attempt = 0
+        while True:
             try:
                 return fn(system, messages, on_token, on_think)
             except urllib.error.HTTPError as e:
                 body = e.read().decode("utf-8", "replace")[:2000]
-                if e.code in RETRY_CODES and attempt < 3:
-                    time.sleep(2 ** attempt * 2)
+                wait = retry_wait(e.code, attempt, e.headers.get("Retry-After") if e.headers else None) \
+                    if e.code in RETRY_CODES else None
+                if wait is not None:
+                    time.sleep(wait)
+                    attempt += 1
                     continue
                 raise LLMError(f"{self.label} HTTP {e.code}: {body}") from None
             except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
-                if attempt < 3:
+                if attempt < RETRIES:
+                    attempt += 1
                     time.sleep(2 ** attempt * 2)
                     continue
                 raise LLMError(f"{self.label} 連線失敗: {e}") from None
