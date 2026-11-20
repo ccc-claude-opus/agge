@@ -50,6 +50,17 @@ SKIP_DIRS = {".git", ".agge", "node_modules", "__pycache__", ".venv", "venv", ".
 MAX_RESULT = 30000
 
 _TAG = re.compile(r'<(%s)((?:\s+[\w-]+\s*=\s*"[^"]*")*)\s*(/?)>' % "|".join(TOOL_NAMES))
+_NAMES = "|".join(TOOL_NAMES)
+ATTR_NAMES = ("path", "pattern", "glob", "timeout", "depth", "start", "end", "append", "name", "agent", "server", "tool")
+# Damage some models (MiniMax-M3.1) do to the tags in long contexts, repaired before parsing:
+#   ]<]minimax[>[  (or only ]<]minimax[)    a leaked marker of the model's native tool-call format
+#   <shell timeout>120">ls</shell>          `="` written as `>`
+#   <search pattern>a|b</pattern> path="."/>  an attribute written as a child element
+_GARBAGE = re.compile(r"\]<\][\w-]*\[(?:>\[)?")
+_BROKEN_EQ = re.compile(r'(<(?:%s)(?:\s+[\w-]+\s*=\s*"[^"]*")*\s+[\w-]+)>([^"<>\n]*)"' % _NAMES)
+_CHILD_ATTR = re.compile(r'(<(?:%s)(?:\s+[\w-]+\s*=\s*"[^"]*")*)\s+(%s)>(.*?)</\2>' % (_NAMES, "|".join(ATTR_NAMES)), re.S)
+_OPEN = re.compile(r"<(%s)\b" % _NAMES)
+_FENCE = re.compile(r"```.*?(```|\Z)", re.S)
 _ATTR = re.compile(r'([\w-]+)\s*=\s*"([^"]*)"')
 _PAIR = re.compile(r"<old>(.*?)</old>\s*<new>(.*?)</new>", re.S)
 
@@ -66,7 +77,27 @@ class Call:
     closed: bool = True
 
 
+def repair(text):
+    """Undo the known kinds of tag damage (see _GARBAGE, _BROKEN_EQ, _CHILD_ATTR)."""
+    text = _GARBAGE.sub("", text)
+    for _ in range(16):
+        new = _CHILD_ATTR.sub(lambda m: f'{m.group(1)} {m.group(2)}="{html.escape(m.group(3), quote=True)}"', text)
+        new = _BROKEN_EQ.sub(r'\1="\2"', new)
+        if new == text:
+            return text
+        text = new
+    return text
+
+
+def malformed(text):
+    """A tool tag outside code fences that parse_calls could not read: the first 200 characters from it."""
+    bare = _FENCE.sub("", text)
+    m = _OPEN.search(bare)
+    return bare[m.start():m.start() + 200] if m else None
+
+
 def parse_calls(text):
+    text = repair(text)
     calls, pos = [], 0
     while True:
         m = _TAG.search(text, pos)

@@ -27,6 +27,8 @@ Paths are relative to the workspace root. Always write complete file contents.""
 NUDGE = ("Your reply ended right before the action you announced, without any tool tag. "
          "Write the tool tag(s) now, or give your final answer if the task is complete.")
 EMPTY_NUDGE = "Your previous reply was empty. Please continue with the task."
+MALFORMED = ("Your reply has a tool tag that could not be parsed, so nothing was run:\n{snippet}\n"
+             "Write the tag again exactly in this form (attributes as name=\"value\"):\n{docs}")
 
 
 class Agent:
@@ -70,7 +72,7 @@ class Agent:
 
     def run(self, messages, on_token=None, on_think=None):
         """Agent loop: call the model, execute tool tags, feed results back. Mutates `messages`."""
-        system, reply, nudges = self.system_prompt(), "", 0
+        system, reply, nudges, repairs = self.system_prompt(), "", 0, 0
         for step in range(self.rt.max_steps):
             self.rt.event("llm", agent=self.name, model=self.llm.label, step=step)
             reply = (self.llm.chat(system, messages, on_token=on_token, on_think=on_think) or "").strip()
@@ -78,6 +80,15 @@ class Agent:
             reply = reply or "(empty reply)"
             messages.append({"role": "assistant", "content": reply})
             calls = tools.parse_calls(reply) if self.tools else []
+            if not calls and self.tools and repairs < 3:
+                # a tag the model meant but wrote wrong: ask for it again instead of finishing
+                bad = tools.malformed(reply)
+                if bad:
+                    repairs += 1
+                    self.rt.event("warn", agent=self.name, msg=f"{self.name} 的工具標籤格式錯誤,請它重寫")
+                    docs = "\n".join(f"- {tools.TOOL_DOCS[t]}" for t in self.tools)
+                    messages.append({"role": "user", "content": MALFORMED.format(snippet=bad, docs=docs)})
+                    continue
             if not calls:
                 # Models sometimes return nothing, or announce an action ("Step 1: ask architect:")
                 # and stop before writing the tag; nudge them to continue instead of finishing.

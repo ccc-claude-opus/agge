@@ -46,6 +46,29 @@ def test_parse_calls():
     assert not tools.parse_calls('<write_file path="x">no end')[0].closed
 
 
+def test_repair_damaged_tags():
+    # seen from MiniMax-M3.1 in long contexts
+    c = tools.parse_calls('<shell timeout>120">pwd && ls</shell>')
+    assert [(x.name, x.attrs, x.body) for x in c] == [("shell", {"timeout": "120"}, "pwd && ls")]
+    c = tools.parse_calls('<search pattern>x_close|y_close|chan<|stream]<]minimax[>[</pattern> path=".." glob="*.veryl"/>')
+    assert [(x.name, x.attrs) for x in c] == [("search", {"pattern": "x_close|y_close|chan<|stream", "path": "..", "glob": "*.veryl"})]
+    c = tools.parse_calls('<shell timeout="120">reda --version || true]<]minimax[</shell>')
+    assert c[0].body == "reda --version || true"
+    # well-formed tags and file contents are left alone
+    c = tools.parse_calls('<write_file path="a.html"><p class="x">say "hi"</p></write_file><shell timeout="60" >echo "a>b"</shell>')
+    assert [x.body for x in c] == ['<p class="x">say "hi"</p>', 'echo "a>b"']
+
+
+def test_malformed_tag_is_sent_back(prj):
+    # a tag that cannot be repaired: the agent is asked to write it again, not finished
+    llm = FakeLLM([("tool_result", "done!"), ("could not be parsed", '<list_files path="."/>'),
+                   ("go", '<shell timeout=120 cmd>ls</shell>')])
+    out = runtime(prj, llm).agent("coder").run([{"role": "user", "content": "go"}])
+    assert out == "done!" and any("could not be parsed" in c for c in llm.calls)
+    # a tag inside a code fence in a final answer is not a call
+    assert tools.malformed("Use it like this:\n```\n<shell>ls</shell>\n```") is None
+
+
 def test_tools_and_workspace(tmp_path):
     ws = tools.Workspace(tmp_path)
     ctx = tools.Context(ws, tools.Approver("auto"))
