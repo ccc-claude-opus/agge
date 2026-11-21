@@ -47,19 +47,29 @@ AGENTS = {
     "outliner": {
         "description": "大綱規劃:為書籍或長文設計章節結構",
         "system": "You are an experienced book editor and author who designs clear, well-paced outlines "
-                  "with a logical progression and no overlap between chapters.",
+                  "with a logical progression and no overlap between chapters. You plan books as chapters "
+                  "split into section files named `CC.S-yyyyyy.md` (zero-padded chapter number, section "
+                  "number, hyphen, title). You explain how the technical ideas and theories drive one "
+                  "another and why each step follows from the previous one.",
         "tools": FILE_TOOLS,
     },
     "writer": {
         "description": "作者:撰寫完整章節",
-        "system": "You are a skilled author. Write rich, accurate, engaging long-form prose in Markdown with "
-                  "concrete examples, sections, and smooth transitions. Write the full text, never a summary.",
+        "system": "You are a skilled author of technical textbooks. Write rich, accurate, engaging long-form "
+                  "prose in standard GitHub Markdown with concrete examples, sections, and smooth transitions. "
+                  "Write the full text, never a summary. Explain the causal and driving relationships between "
+                  "technology and theory, not just isolated facts. You may use LaTeX math and Mermaid diagrams "
+                  "as long as they render on GitHub. For historical events, put the year in the title. When a "
+                  "fact is uncertain, verify it first (e.g. Wikipedia) before writing.",
         "tools": FILE_TOOLS,
     },
     "editor": {
         "description": "編輯:統一風格、修正錯誤、維護目錄",
         "system": "You are a senior editor. Ensure consistency of terminology, tone and formatting across "
-                  "chapters, fix factual and stylistic problems in place, and keep the table of contents current.",
+                  "chapters, fix factual and stylistic problems in place, and keep the table of contents current. "
+                  "Enforce the standard GitHub Markdown conventions, the `CC.S-yyyyyy.md` file naming, and the "
+                  "rule that inline math `$...$` is surrounded by spaces. Verify doubtful facts before editing. "
+                  "You may use LaTeX math and Mermaid diagrams as long as they render on GitHub.",
         "tools": FILE_TOOLS,
     },
 }
@@ -116,29 +126,53 @@ GRAPHS = {
         "nodes": {
             "outline": {
                 "agent": "outliner",
-                "prompt": "Plan a book.\n\n{{task}}\n\n"
-                          "1. Write the detailed outline to `outline.md`.\n"
-                          "2. Write `README.md` with the book title, a preface paragraph and a table of contents "
-                          "linking every chapter file.\n"
-                          "3. Finish your reply with a ```json code block containing the chapter list: "
-                          "[{\"file\": \"chapters/01-xxx.md\", \"title\": \"...\", \"brief\": \"what this chapter covers\"}, ...]",
+                "prompt": "Plan a textbook.\n\n{{task}}\n\n"
+                          "Follow this file-naming convention exactly. Each section is its own file named "
+                          "`CC.S-yyyyyy.md`, where CC is the zero-padded chapter number and S is the section "
+                          "number (e.g. `01.1-xxx.md`, `05.3-xxx.md`, `12.3-xxx.md`), and `yyyyyy` is the "
+                          "section title. For historical events, include the year in the title.\n\n"
+                          "1. Write the detailed outline to `outline.md`, grouping sections under chapters and "
+                          "showing how the technical ideas and theories drive one another (cause and effect).\n"
+                          "2. Write `README.md` with the book title, a preface paragraph, and a table of "
+                          "contents linking every section file. The table of contents must use exactly this "
+                          "nested-`* ` list form:\n"
+                          "* 第1章-xxxxxx\n"
+                          "    * [1.1-yyyyyyy](01.1-yyyyyy.md)\n"
+                          "    * [1.2-yyyyyyy](01.2-yyyyyy.md)\n"
+                          "* 第2章-xxxxxx\n"
+                          "    * [2.1-yyyyyyy](02.1-yyyyyy.md)\n"
+                          "...and so on for every chapter and section.\n"
+                          "3. Finish your reply with a ```json code block containing one entry per SECTION "
+                          "file: [{\"file\": \"01.1-yyyyyy.md\", \"title\": \"1.1 yyyyyyy\", "
+                          "\"brief\": \"what this section covers\"}, ...]. File names must match the "
+                          "convention and the README links exactly.",
             },
             "chapters": {
                 "agent": "writer",
                 "map": "outline",
-                "prompt": "You are writing one chapter of a book.\n\nBook request:\n{{task}}\n\n"
+                "prompt": "You are writing one section of a textbook.\n\nBook request:\n{{task}}\n\n"
                           "Full outline (read `outline.md` for details):\n{{outline}}\n\n"
-                          "Your chapter: {{item.title}}\nFile: {{item.file}}\nBrief: {{item.brief}}\n\n"
-                          "Write the COMPLETE chapter in Markdown to `{{item.file}}` with write_file "
-                          "(use append=\"true\" to continue a long chapter in several parts). "
-                          "Start with a `# ` heading. Reply with a 3-line summary.",
+                          "Your section: {{item.title}}\nFile: {{item.file}}\nBrief: {{item.brief}}\n\n"
+                          "Write the COMPLETE section in standard GitHub Markdown to `{{item.file}}` with "
+                          "write_file (use append=\"true\" to continue a long section in several parts). "
+                          "Only create or modify `{{item.file}}`; never edit another section's file. "
+                          "Start with a `# ` heading. You may use LaTeX math and Mermaid diagrams, but they "
+                          "must render on GitHub. Put a space before and after every inline `$...$` formula "
+                          "(e.g. ` $x + y$ `), and never a space immediately inside the dollar signs. "
+                          "Explain the causal and driving relationships between the technology and the theory "
+                          "rather than listing isolated facts; for historical events, include the year in the "
+                          "title. Verify uncertain facts first (e.g. Wikipedia). Reply with a 3-line summary.",
             },
             "edit": {
                 "agent": "editor",
-                "prompt": "Book request:\n{{task}}\n\nChapter summaries:\n{{chapters}}\n\n"
-                          "Read README.md, outline.md and every chapter. Fix inconsistencies, repetition and "
-                          "errors in place with edit_file, make sure README.md links every chapter correctly, "
-                          "then report what you changed.",
+                "prompt": "Book request:\n{{task}}\n\nSection summaries:\n{{chapters}}\n\n"
+                          "Read README.md, outline.md and every section file. Fix inconsistencies, repetition and "
+                          "errors in place with edit_file. Enforce the file naming `CC.S-yyyyyy.md` and keep "
+                          "README.md's table of contents in the form `* 第N章-xxxxxx` followed by indented "
+                          "`    * [N.S-yyyyyyy](NN.S-yyyyyy.md)` links, linking every section correctly. "
+                          "Check that Markdown, LaTeX math and Mermaid render on GitHub, that every inline "
+                          "`$...$` formula has a space before and after, and that the narrative explains the "
+                          "causal relationships between ideas. Then report what you changed.",
             },
         },
         "edges": [["outline", "chapters"], ["chapters", "edit"]],

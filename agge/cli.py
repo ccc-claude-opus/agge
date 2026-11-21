@@ -60,7 +60,8 @@ def make_runtime(prj, args, on_event=None):
     return Runtime(prj, workspace=Workspace(root, dirs), approver=Approver(approval),
                    model=getattr(args, "model", None), model_map=parse_kv(getattr(args, "assign", None)),
                    on_event=on_event, team=getattr(args, "team", None),
-                   language=getattr(args, "lang", None), max_steps=getattr(args, "max_steps", None))
+                   language=getattr(args, "lang", None), max_steps=getattr(args, "max_steps", None),
+                   fallback=getattr(args, "fallback", None))
 
 
 def read_task(words):
@@ -237,7 +238,8 @@ def run_graph(prj, args, graph_name, graph, task):
         log.finish("dry-run")
         return
     try:
-        outputs = Executor(graph, rt, log=log, workers=args.workers).run(task)
+        outputs = Executor(graph, rt, log=log, workers=args.workers,
+                           resume=getattr(args, "resume", False)).run(task)
     except KeyboardInterrupt:
         log.finish("interrupted")
         raise
@@ -618,7 +620,9 @@ def build_parser():
     sub = p.add_subparsers(dest="cmd", metavar="<op>")
 
     def runtime_opts(sp, out=True):
-        sp.add_argument("-m", "--model", help="預設模型(別名或 provider:model)")
+        sp.add_argument("-m", "--model", help="預設模型(別名或 provider:model;可用逗號指定備援鏈)")
+        sp.add_argument("--fallback", metavar="MODEL[,MODEL...]",
+                        help="主要模型失敗(含配額用盡)時自動切換的備援模型,例如 minimax,glm")
         sp.add_argument("-M", "--assign", action="append", metavar="AGENT=MODEL",
                         help="指定某 agent/節點使用的模型,可重複")
         sp.add_argument("-y", "--yes", action="store_true", help="自動核准 shell 指令")
@@ -633,6 +637,8 @@ def build_parser():
         runtime_opts(sp)
         sp.add_argument("-g", "--graph", help="改用其他 graph")
         sp.add_argument("-w", "--workers", type=int, default=4, help="平行節點數")
+        sp.add_argument("-r", "--resume", action="store_true",
+                        help="接續:跳過已經存在的 map 項目檔案(例如已寫好的章節)")
         sp.add_argument("-n", "--dry-run", action="store_true", help="只顯示計畫與模型分配")
 
     sp = sub.add_parser("init", help="建立 .agge/ 專案")

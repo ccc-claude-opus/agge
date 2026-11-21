@@ -192,8 +192,9 @@ def describe(graph):
 
 
 class Executor:
-    def __init__(self, graph, rt, log=None, workers=4):
+    def __init__(self, graph, rt, log=None, workers=4, resume=False):
         self.graph, self.rt, self.log, self.workers = graph, rt, log, workers
+        self.resume = resume
         self.nodes = graph.get("nodes", {})
         self.deps = dependencies(graph)
         self.order = topo_order(graph)
@@ -231,11 +232,27 @@ class Executor:
         if not items:
             raise GraphError(f"節點 {name}: 無法從 '{src}' 的輸出取得清單(需要 ```json 陣列或條列清單)")
         items = items[: node.get("max_items", 100)]
+
+        def run_one(i, it):
+            label = f"{name}[{i + 1}]"
+            path = it.get("file") if isinstance(it, dict) else None
+            if self.resume and path:
+                if (self.rt.workspace.root / path).exists():
+                    self.rt.event("warn", msg=f"{label} 已存在,跳過 {path}")
+                    return f"(跳過已存在檔案 {path})"
+            prompt = render(template, {**variables, "item": it, "index": str(i + 1)})
+            return self._run_agent(name, node, prompt, label)
+
+        def guard(i, fut):
+            try:
+                return fut.result()
+            except Exception as e:  # one bad item must not abort the whole (book) run
+                self.rt.event("warn", msg=f"{name}[{i + 1}] 失敗: {e}")
+                return f"(此項失敗: {e})"
+
         with cf.ThreadPoolExecutor(node.get("parallel", self.workers)) as ex:
-            futs = [ex.submit(self._run_agent, name, node,
-                              render(template, {**variables, "item": it, "index": str(i + 1)}), f"{name}[{i + 1}]")
-                    for i, it in enumerate(items)]
-            outs = [f.result() for f in futs]
+            futs = [ex.submit(run_one, i, it) for i, it in enumerate(items)]
+            outs = [guard(i, f) for i, f in enumerate(futs)]
         return "\n\n".join(f"### {name}[{i + 1}]\n{o}" for i, o in enumerate(outs))
 
     def run(self, task):

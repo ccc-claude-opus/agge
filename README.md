@@ -50,7 +50,7 @@ agge run brainstorm "如何設計快取層"
 | `book` | outline → chapters(依大綱的 JSON 章節清單**平行**撰寫每章)→ edit |
 | `brainstorm` | 三個 agent 平行提案 → lead 綜合 |
 
-`-n/--dry-run` 只顯示流程與模型分配;`-o DIR` 指定輸出目錄;`-y` 自動核准 shell。
+`-n/--dry-run` 只顯示流程與模型分配;`-o DIR` 指定輸出目錄;`-y` 自動核准 shell;`-r/--resume` 跳過 map 節點中已存在的檔案(例如已寫好的章節);單一章節失敗不會中止整本書,其餘章節與後續節點仍會執行。
 
 ## 指定模型
 
@@ -70,6 +70,14 @@ agge model test claude
 ```bash
 agge code "..." -m glm -M review=claude -M implement=ds
 ```
+
+模型配額用盡或呼叫失敗時,可用 `--fallback` 指定自動切換的備援鏈(套用到所有 agent/節點):
+
+```bash
+agge book "EDA HLS 的歷史與現況" -o hlsBook --fallback minimax,glm
+```
+
+也可以直接寫 `-m minimax,glm`。遇到 429 配額用盡會立刻換下一個模型,不會空等重試。
 
 對話中用 `/model claude` 切換目前 agent 的模型。
 

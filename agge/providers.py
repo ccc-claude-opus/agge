@@ -36,6 +36,16 @@ RETRIES = 3
 RATE_WAITS = (10, 20, 40, 60, 60, 60)
 
 
+QUOTA_HINTS = ("用量上限", "用量已", "quota", "credit", "billing", "insufficient",
+               "余额", "餘額", "額度", "额度", "exceeded your", "out of")
+
+
+def is_quota_error(body):
+    """A 429 that means the plan's quota is spent — retrying will not help, switch models instead."""
+    text = (body or "").lower()
+    return any(h.lower() in text for h in QUOTA_HINTS)
+
+
 def retry_wait(code, attempt, retry_after=None):
     """Seconds to wait before attempt+1, or None to give up."""
     if code == 429:
@@ -85,6 +95,8 @@ class LLM:
                 return fn(system, messages, on_token, on_think)
             except urllib.error.HTTPError as e:
                 body = e.read().decode("utf-8", "replace")[:2000]
+                if e.code == 429 and is_quota_error(body):
+                    raise LLMError(f"{self.label} 配額用盡(HTTP 429): {body}") from None
                 wait = retry_wait(e.code, attempt, e.headers.get("Retry-After") if e.headers else None) \
                     if e.code in RETRY_CODES else None
                 if wait is not None:

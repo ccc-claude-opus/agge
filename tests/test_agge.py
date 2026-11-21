@@ -134,6 +134,53 @@ def test_graph_map_and_loop(prj):
     assert out["fix"] == "fixed" and out["review"] == "VERDICT: APPROVED" and review_count["n"] == 2
 
 
+def test_quota_error_detection():
+    from agge.providers import FallbackLLM, LLMError, is_quota_error
+    assert is_quota_error('已达到 Token Plan 用量上限：请升级')
+    assert is_quota_error('insufficient credit')
+    assert not is_quota_error('too many requests, slow down')
+
+    class Boom:
+        label = "a:boom"
+
+        def chat(self, *a, **k):
+            raise LLMError("配額用盡")
+
+    class Ok:
+        label = "b:ok"
+
+        def chat(self, *a, **k):
+            return "answer"
+
+    assert FallbackLLM([Boom(), Ok()]).chat("s", []) == "answer"
+
+
+def test_runtime_fallback_chain(prj):
+    rt = Runtime(prj, model="echo", fallback="glm")
+    assert rt.llm(rt.model_for("writer")).label == "echo:echo,nvidia:z-ai/glm-5.3-flash"
+    assert rt.llm("glm").label == "nvidia:z-ai/glm-5.3-flash"  # no duplicate
+
+
+def test_graph_map_resume_and_tolerance(prj):
+    (prj.root / "c1.md").write_text("already written")
+
+    def boom(_):
+        raise RuntimeError("quota exhausted")
+
+    llm = FakeLLM([
+        ("Plan", '```json\n[{"file":"c1.md","title":"One"},{"file":"c2.md","title":"Two"}]\n```'),
+        ("Your chapter: Two", boom),
+    ])
+    g = {"nodes": {
+        "outline": {"agent": "outliner", "prompt": "Plan {{task}}"},
+        "chapters": {"agent": "writer", "map": "outline", "prompt": "Your chapter: {{item.title}}"},
+    }, "edges": [["outline", "chapters"]]}
+    out = graph.Executor(g, runtime(prj, llm), resume=True).run("book")
+    assert "跳過已存在檔案 c1.md" in out["chapters"]
+    assert "此項失敗: quota exhausted" in out["chapters"]
+    assert not any("Your chapter: One" in c for c in llm.calls)
+
+
 def test_validate_and_render(prj):
     bad = {"nodes": {"a": {"agent": "nobody"}, "b": {}}, "edges": [["a", "b"], ["b", "a"]]}
     errs = graph.validate(bad, prj.agents())

@@ -53,7 +53,10 @@ Full reference: `doc/offload.md` in the agge repo (`/Users/Shared/ccc/project/ag
    `--save FILE`, `--json` (`files_changed`), then `tail` / `grep` / `git diff --stat`.
 2. For code, write a precise spec file and pass it with `-f`; one module per call.
 3. Always run and test what came back. Known failure modes: truncated output, stray garbage
-   lines (e.g. `]<]minimax[>[`), empty replies — retry once, then fall back or do it yourself.
+   lines (e.g. `]<]minimax[>[`), empty replies — retry once or switch model. When the failure is
+   agge's own fault (it misreads a reply, stops early, crashes), fix agge in
+   `/Users/Shared/ccc/project/agge` (test + `./test.sh` + commit) instead of doing the work yourself.
+   MiniMax: run one agent at a time (parallel runs hit HTTP 429).
 4. Long jobs (code modules take minutes): run in the background (`run_in_background`) and do
    integration work meanwhile.
 5. Tell the user what was offloaded and what you verified yourself.

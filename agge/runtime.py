@@ -111,13 +111,15 @@ class Runtime:
     """Everything an agent needs: project config, workspace, approval policy, model choices."""
 
     def __init__(self, project, workspace=None, approver=None, model=None, model_map=None,
-                 on_event=None, team=None, max_steps=None, language=None):
+                 on_event=None, team=None, max_steps=None, language=None, fallback=None):
         cfg = project.config
         self.project = project
         self.workspace = workspace or tools.Workspace(project.root, cfg.get("dirs", []))
         self.approver = approver or tools.Approver(cfg.get("approval", "ask"))
         self.model = model
         self.model_map = dict(model_map or {})
+        self.fallback = ([n.strip() for n in fallback.split(",") if n.strip()]
+                         if isinstance(fallback, str) else [n for n in (fallback or []) if n])
         self.on_event = on_event
         self.team = team
         self.max_steps = max_steps or cfg.get("max_steps", 40)
@@ -157,6 +159,8 @@ class Runtime:
         with self._lock:
             if model_name not in self._llms:
                 names = [n.strip() for n in model_name.split(",") if n.strip()]
+                if self.fallback:
+                    names += [f for f in self.fallback if f not in names]
                 llms = [LLM(self.project.resolve_model(n)) for n in names]
                 self._llms[model_name] = llms[0] if len(llms) == 1 else FallbackLLM(llms)
             return self._llms[model_name]
