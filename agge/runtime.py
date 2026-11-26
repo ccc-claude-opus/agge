@@ -100,6 +100,8 @@ class Agent:
                     messages.append({"role": "user", "content": EMPTY_NUDGE if empty else NUDGE})
                     continue
                 return reply
+            # A good tool round: the limit on repairs counts consecutive bad replies only.
+            repairs = 0
             if on_token:
                 on_token("\n")
             messages.append({"role": "user", "content": tools.run_calls(calls, self.context())})

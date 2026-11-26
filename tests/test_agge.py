@@ -70,6 +70,18 @@ def test_malformed_tag_is_sent_back(prj):
                    ("go", '<shell timeout=120 cmd>ls</shell>')])
     out = runtime(prj, llm).agent("coder").run([{"role": "user", "content": "go"}])
     assert out == "done!" and any("could not be parsed" in c for c in llm.calls)
+    # the repair limit counts consecutive bad replies: a long run with an
+    # occasional broken tag keeps going
+    state = {"n": 0}
+
+    def step(_):
+        state["n"] += 1
+        return '<search pattern="x' if state["n"] % 2 else '<list_files path="."/>'
+
+    llm = FakeLLM([("tool_result", lambda m: "finished" if state["n"] >= 12 else step(m)),
+                   ("could not be parsed", step), ("go", step)])
+    out = runtime(prj, llm).agent("coder").run([{"role": "user", "content": "go"}])
+    assert out == "finished", out
     # a tag inside a code fence in a final answer is not a call
     assert tools.malformed("Use it like this:\n```\n<shell>ls</shell>\n```") is None
 
