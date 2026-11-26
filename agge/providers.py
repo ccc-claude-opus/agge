@@ -208,12 +208,20 @@ class FallbackLLM:
         return ",".join(l.label for l in self.llms)
 
     def chat(self, system, messages, on_token=None, on_think=None):
-        errors = []
+        errors, empty = [], False
         for llm in self.llms:
             try:
-                return llm.chat(system, messages, on_token=on_token, on_think=on_think)
+                reply = llm.chat(system, messages, on_token=on_token, on_think=on_think)
             except LLMError as e:
                 errors.append(str(e))
+                continue
+            # An empty reply (e.g. the token budget spent on reasoning, or a context the
+            # model cannot handle) is a failure of that model: let the next one answer.
+            if reply and reply.strip():
+                return reply
+            empty = True
+        if empty:
+            return ""
         raise LLMError("所有模型都失敗:\n  " + "\n  ".join(errors))
 
 

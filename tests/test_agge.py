@@ -154,6 +154,15 @@ def test_quota_error_detection():
 
     assert FallbackLLM([Boom(), Ok()]).chat("s", []) == "answer"
 
+    class Empty:
+        label = "c:empty"
+
+        def chat(self, *a, **k):
+            return "  "
+
+    assert FallbackLLM([Empty(), Ok()]).chat("s", []) == "answer"
+    assert FallbackLLM([Empty(), Boom()]).chat("s", []) == ""
+
 
 def test_runtime_fallback_chain(prj):
     rt = Runtime(prj, model="echo", fallback="glm")
