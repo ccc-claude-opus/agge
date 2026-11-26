@@ -320,3 +320,30 @@ def test_cli_skill_and_mcp(tmp_path):
     (tmp_path / "claude.json").write_text(json.dumps({"mcpServers": {"x": {"command": "x-server"}}}))
     assert "x" in run("mcp", "import", "claude.json").stdout
     assert set(json.loads((tmp_path / ".agge/config.json").read_text())["mcp"]) == {"calc", "x"}
+
+
+def test_shell_timeout_kills_process_group(tmp_path):
+    import time
+    marker = tmp_path / "alive"
+    # A child that outlives the shell would keep touching the marker.
+    cmd = f"(while true; do touch {marker}; sleep 0.1; done) & sleep 30"
+    code, out, timed_out = tools.run_shell(cmd, tmp_path, 1)
+    assert timed_out
+    marker.unlink(missing_ok=True)
+    time.sleep(0.5)
+    assert not marker.exists()
+
+
+def test_shell_leftover_background_killed(tmp_path):
+    import time
+    marker = tmp_path / "bg"
+    code, out, timed_out = tools.run_shell(f"(sleep 0.5; touch {marker}) & echo started", tmp_path, 10)
+    assert code == 0 and "started" in out and not timed_out
+    time.sleep(1)
+    assert not marker.exists()
+
+
+def test_shell_output_is_capped(tmp_path):
+    code, out, timed_out = tools.run_shell("yes x | head -c 300000", tmp_path, 10, limit=1000)
+    assert "output truncated: 300000 bytes" in out
+    assert len(out) < 1200

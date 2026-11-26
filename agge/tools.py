@@ -361,12 +361,48 @@ def _shell(call, ctx):
         raise ToolError("empty command")
     if not ctx.approver.confirm(f"{ctx.agent} 要執行 shell(在 {ctx.workspace.root}):\n  {cmd}"):
         raise ToolError("the user denied this command")
-    try:
-        r = subprocess.run(cmd, shell=True, cwd=ctx.workspace.root, capture_output=True, text=True,
-                           timeout=int(call.attrs.get("timeout", 120)))
-    except subprocess.TimeoutExpired:
-        raise ToolError("command timed out")
-    return f"exit code {r.returncode}\n{r.stdout}{r.stderr}".rstrip()
+    code, out, timed_out = run_shell(cmd, ctx.workspace.root, int(call.attrs.get("timeout", 120)))
+    if timed_out:
+        raise ToolError("command timed out (its processes were killed)\n" + out)
+    return f"exit code {code}\n{out}".rstrip()
+
+
+SHELL_OUTPUT_LIMIT = 100_000
+
+
+def run_shell(cmd, cwd, timeout, limit=SHELL_OUTPUT_LIMIT):
+    """Runs a shell command in its own process group.
+
+    On timeout the whole group is killed (subprocess.run would only kill the
+    shell, leaving e.g. a runaway test binary running and eating memory), and
+    any background processes it left behind are killed when it finishes.
+    Output goes to a temporary file so a flood of output cannot fill memory;
+    only the first `limit` bytes are returned. Returns (code, output, timed_out).
+    """
+    import signal
+    import tempfile
+
+    with tempfile.TemporaryFile() as buf:
+        p = subprocess.Popen(cmd, shell=True, cwd=cwd, stdout=buf, stderr=subprocess.STDOUT,
+                             stdin=subprocess.DEVNULL, start_new_session=True)
+        timed_out = False
+        try:
+            code = p.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            code = None
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        if code is None:
+            code = p.wait()
+        size = buf.seek(0, os.SEEK_END)
+        buf.seek(0)
+        data = buf.read(limit).decode("utf-8", "replace")
+        if size > limit:
+            data += f"\n... (output truncated: {size} bytes, showing the first {limit})"
+    return code, data, timed_out
 
 
 def _skill(call, ctx):
